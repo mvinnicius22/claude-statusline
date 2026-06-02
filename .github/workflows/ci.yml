@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y jq
+
+      - name: Smoke test — sample with rate limits
+        run: |
+          now=$(date +%s); r=$(( now + 10800 ))   # +3h, realistic countdown
+          input=$(jq --argjson r "$r" \
+            '.rate_limits.five_hour.resets_at=$r | .rate_limits.seven_day.resets_at=$r' \
+            test/sample.json)
+          output=$(printf '%s' "$input" | bash statusline.sh)
+          echo "$output"
+          echo "$output" | grep -q "Opus 4.8"
+          echo "$output" | grep -q "myproject"
+          echo "$output" | grep -q "66%"
+          echo "$output" | grep -q "26%"
+
+      - name: Smoke test — sample without rate limits
+        run: |
+          output=$(bash statusline.sh < test/sample-no-limits.json)
+          echo "$output"
+          echo "$output" | grep -q "Sonnet 4.6"
+          echo "$output" | grep -q "myproject"
+          # 5h/7d lines must not appear when rate_limits absent
+          if echo "$output" | grep -qE "^5h|^7d"; then
+            echo "ERROR: rate limit lines appeared without rate_limits in input" >&2
+            exit 1
+          fi
+
+      - name: Test SL_ICONS=none
+        run: |
+          output=$(SL_ICONS=none bash statusline.sh < test/sample.json)
+          echo "$output"
+          # portable across BSD/GNU grep — match the literal icon emoji
+          if echo "$output" | grep -qE '🤖|📁|🌿'; then
+            echo "ERROR: model/dir/branch emoji found with SL_ICONS=none" >&2
+            exit 1
+          fi
+
+      - name: Test all toggles off
+        run: |
+          output=$(SL_GIT=0 SL_CTX=0 SL_LIMITS=0 SL_TOKENS=0 bash statusline.sh < test/sample.json)
+          echo "$output"
+          echo "$output" | grep -q "Opus 4.8"

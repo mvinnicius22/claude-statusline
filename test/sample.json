@@ -1,0 +1,16 @@
+{
+  "model": { "display_name": "Opus 4.8" },
+  "effort": { "level": "high" },
+  "output_style": { "name": "default" },
+  "workspace": { "current_dir": "/home/user/myproject" },
+  "context_window": {
+    "total_input_tokens": 22000,
+    "context_window_size": 200000
+  },
+  "cost": { "total_cost_usd": 4.92 },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 66, "resets_at": 0 },
+    "seven_day": { "used_percentage": 26, "resets_at": 0 }
+  },
+  "transcript_path": ""
+}
