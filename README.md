@@ -112,7 +112,7 @@ Cumulative token counts for the session, parsed from the transcript (cached by f
 
 `hit 92%` is the **cache hit rate** = `read ÷ (fresh + write + read)` — the share of input served from the cheap cache. Higher is cheaper; a steady session sits at 80–95%+. It drops when the context churns (files edited, tools changing, switching projects), which invalidates the cache and forces 1.25× re-writes. Color: green ≥70%, yellow ≥40%, red below.
 
-## Additional configuration
+## Optional configuration
 
 Set environment variables inside the `command` field of `settings.json`:
 
