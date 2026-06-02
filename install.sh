@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd || echo .)"
 
 # --- detect OS ---
 OS="$(uname -s)"
@@ -38,11 +38,18 @@ if ! command -v git >/dev/null 2>&1; then
   echo "Note: git not found — the git segment will be hidden."
 fi
 
-# --- install script ---
+# --- install script (local copy, or download when piped via curl | bash) ---
+RAW_BASE="https://raw.githubusercontent.com/mvinnicius22/claude-statusline/main"
+DEST="$CLAUDE_CONFIG_DIR/statusline.sh"
 mkdir -p "$CLAUDE_CONFIG_DIR"
-cp "$SCRIPT_DIR/statusline.sh" "$CLAUDE_CONFIG_DIR/statusline.sh"
-chmod +x "$CLAUDE_CONFIG_DIR/statusline.sh"
-echo "Installed: $CLAUDE_CONFIG_DIR/statusline.sh"
+if [ -f "$SCRIPT_DIR/statusline.sh" ]; then
+  cp "$SCRIPT_DIR/statusline.sh" "$DEST"
+else
+  echo "statusline.sh not local — downloading from repo…"
+  curl -fsSL "$RAW_BASE/statusline.sh" -o "$DEST"
+fi
+chmod +x "$DEST"
+echo "Installed: $DEST"
 
 # --- backup settings.json ---
 TS=$(date +%Y%m%d%H%M%S)
