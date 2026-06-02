@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Claude Code statusline — aligned, multi-line, color-coded.
 #
-#   🪨 CAVEMAN │ 🤖 Opus 4.8 ⚡high · default │ 📁 proj on 🌿 branch (N changed)
-#   ctx █░░░░░░░░░  11% · 890k left · $4.92
-#   5h  ██████░░░░  66% · 34% left · ↺ 15:50 (3h04m) →
-#   7d  ██░░░░░░░░  26% · 74% left · ↺ Fri 11:00
-#   tok fresh 24.9k · write 252k · read 9.3M · out 175k · hit 92%
+#   🪨 CAVEMAN │ 🤖 Opus 4.8 ⚡high · default │ 📁 proj on 🌿 branch A2 ?1
+#   ctx █░░░░░░░░░  14% · 853k left · $4.92 · fresh 6.7k · write 233k · read 8.0M · out 70.3k · hit 97%
+#   5h  █████████░  95% ·  5% left · ↺ 15:50 (1h52m)
+#   7d  ██░░░░░░░░  28% · 72% left · ↺ Fri 11:00
 #
-# 5h/7d come from the subscription's rate_limits in stdin (Pro/Max). The pace
-# arrow projects end-of-window usage: → on pace, ↑ will exhaust early, ↓ slack.
+# 5h/7d come from the subscription's rate_limits in stdin (Pro/Max only).
 #
 # Hide any segment with an env var in the statusLine command, e.g.
 #   "command": "SL_TOKENS=0 SL_CAVEMAN=0 ~/.claude/statusline.sh"
@@ -42,7 +40,7 @@ esac
 R=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'
 RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'
 BLU=$'\033[34m'; MAG=$'\033[35m'; CYN=$'\033[36m'; GRY=$'\033[90m'
-ORANGE=$'\033[38;5;172m'
+ORANGE=$'\033[38;5;172m'; NEU=$'\033[38;5;108m'
 SEP="${GRY} │ ${R}"
 
 # --- graceful fallback if jq missing ---
@@ -105,17 +103,6 @@ bar() {
 
 countdown() { local s=$(( $1 - NOW )); [ "$s" -lt 0 ] && s=0; printf '%dh%02dm' $((s/3600)) $(((s%3600)/60)); }
 
-# pace arrow: project window-end usage from elapsed fraction
-pace() {
-  local used=$1 reset=$2 dur=$3 elapsed proj
-  elapsed=$(( NOW - (reset - dur) ))
-  [ "$elapsed" -le 0 ] && return
-  proj=$(( used * dur / elapsed ))
-  if   [ "$proj" -gt 115 ]; then printf '%s↑%s' "$RED" "$R"
-  elif [ "$proj" -gt 85  ]; then printf '%s→%s' "$YEL" "$R"
-  else printf '%s↓%s' "$GRN" "$R"; fi
-}
-
 # ---------- LINE 1: identity ----------
 SEG1=()
 if [ "${SL_CAVEMAN:-1}" != 0 ]; then
@@ -163,25 +150,9 @@ OUT=""
 for i in "${!SEG1[@]}"; do [ "$i" -gt 0 ] && OUT="${OUT}${SEP}"; OUT="${OUT}${SEG1[$i]}"; done
 printf '%b\n' "$OUT"
 
-# ---------- LINE 2: context ----------
-if [ "${SL_CTX:-1}" != 0 ]; then
-  LEFT_H=$(human $(( CTX_SIZE - CTX_USED )))
-  printf '%b\n' "$(printf '%-3s' ctx) $(bar "$PCT") $(printf '%3d' "$PCT")% ${GRY}·${R} ${LEFT_H} ${GRY}left${R} ${GRY}·${R} ${GRN}$(printf '$%.2f' "$COST")${R}"
-fi
-
-# ---------- LINE 3-4: subscription limits ----------
-if [ "${SL_LIMITS:-1}" != 0 ] && [ "$H5_PCT" -ge 0 ] 2>/dev/null; then
-  R5=$(( 100 - H5_PCT )); EXTRA=""
-  [ "$H5_RESET" -gt 0 ] 2>/dev/null && EXTRA=" ${GRY}·${R} ${GRY}↺ $(epoch_fmt "$H5_RESET" '%H:%M') ($(countdown "$H5_RESET"))${R} $(pace "$H5_PCT" "$H5_RESET" 18000)"
-  printf '%b\n' "$(printf '%-3s' 5h) $(bar "$H5_PCT") $(printf '%3d' "$H5_PCT")% ${GRY}·${R} ${R5}% ${GRY}left${R}${EXTRA}"
-fi
-if [ "${SL_LIMITS:-1}" != 0 ] && [ "${SL_7D:-1}" != 0 ] && [ "$D7_PCT" -ge 0 ] 2>/dev/null; then
-  R7=$(( 100 - D7_PCT )); EXTRA=""
-  [ "$D7_RESET" -gt 0 ] 2>/dev/null && EXTRA=" ${GRY}·${R} ${GRY}↺ $(epoch_fmt "$D7_RESET" '%a %H:%M')${R}"
-  printf '%b\n' "$(printf '%-3s' 7d) $(bar "$D7_PCT") $(printf '%3d' "$D7_PCT")% ${GRY}·${R} ${R7}% ${GRY}left${R}${EXTRA}"
-fi
-
-# ---------- LINE 5: token breakdown (cached by transcript mtime) ----------
+# ---------- token breakdown (computed first; rendered on the context line) ----------
+# Abbreviations: fr=fresh input · wr=cache write · rd=cache read · out=output.
+TOKSEG=""
 if [ "${SL_TOKENS:-1}" != 0 ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   MT=$(file_mtime "$TRANSCRIPT")
   TC="$CLAUDE_CONFIG_DIR/.tokcache-$(basename "$TRANSCRIPT" .jsonl)"
@@ -197,10 +168,31 @@ if [ "${SL_TOKENS:-1}" != 0 ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; t
     )
     printf '%s\n%s %s %s %s\n' "$MT" "${FRESH:-0}" "${CW:-0}" "${CR:-0}" "${TOUT:-0}" > "$TC"
   fi
-  # cache hit rate = cache reads / total input (fresh + write + read).
-  # High is good: reads cost 0.1x vs 1x fresh / 1.25x write.
+  # cache hit rate = reads / total input (fresh + write + read); reads cost 0.1x.
   IN_TOTAL=$(( ${FRESH:-0} + ${CW:-0} + ${CR:-0} ))
   HIT=0; [ "$IN_TOTAL" -gt 0 ] && HIT=$(( ${CR:-0} * 100 / IN_TOTAL ))
   if   [ "$HIT" -ge 70 ]; then HITC="$GRN"; elif [ "$HIT" -ge 40 ]; then HITC="$YEL"; else HITC="$RED"; fi
-  printf '%b\n' "$(printf '%-3s' tok) ${CYN}fresh${R} $(human "${FRESH:-0}") ${GRY}·${R} ${MAG}write${R} $(human "${CW:-0}") ${GRY}·${R} ${BLU}read${R} $(human "${CR:-0}") ${GRY}·${R} ${GRN}out${R} $(human "${TOUT:-0}") ${GRY}·${R} ${HITC}hit ${HIT}%${R}"
+  TOKSEG="${GRY}fresh${R} ${B}$(human "${FRESH:-0}")${R} ${GRY}·${R} ${GRY}write${R} ${B}$(human "${CW:-0}")${R} ${GRY}·${R} ${GRY}read${R} ${B}$(human "${CR:-0}")${R} ${GRY}·${R} ${GRY}out${R} ${B}$(human "${TOUT:-0}")${R} ${GRY}·${R} ${HITC}hit ${HIT}%${R}"
+fi
+
+# ---------- LINE 2: context + cost (+ tokens) ----------
+if [ "${SL_CTX:-1}" != 0 ]; then
+  LEFT_H=$(human $(( CTX_SIZE - CTX_USED )))
+  CTXL="$(printf '%-3s' ctx) $(bar "$PCT") ${B}$(printf '%3d' "$PCT")%${R} ${GRY}·${R} ${B}${LEFT_H}${R} ${GRY}left${R} ${GRY}·${R} ${NEU}${B}$(printf '$%.2f' "$COST")${R}"
+  [ -n "$TOKSEG" ] && CTXL="${CTXL} ${GRY}·${R} ${TOKSEG}"
+  printf '%b\n' "$CTXL"
+elif [ -n "$TOKSEG" ]; then
+  printf '%b\n' "$(printf '%-3s' tok) ${TOKSEG}"
+fi
+
+# ---------- LINE 3-4: subscription limits ----------
+if [ "${SL_LIMITS:-1}" != 0 ] && [ "$H5_PCT" -ge 0 ] 2>/dev/null; then
+  R5=$(( 100 - H5_PCT )); EXTRA=""
+  [ "$H5_RESET" -gt 0 ] 2>/dev/null && EXTRA=" ${GRY}·${R} ${GRY}↺ $(epoch_fmt "$H5_RESET" '%H:%M') ($(countdown "$H5_RESET"))${R}"
+  printf '%b\n' "$(printf '%-3s' 5h) $(bar "$H5_PCT") ${B}$(printf '%3d' "$H5_PCT")%${R} ${GRY}·${R} ${B}${R5}%${R} ${GRY}left${R}${EXTRA}"
+fi
+if [ "${SL_LIMITS:-1}" != 0 ] && [ "${SL_7D:-1}" != 0 ] && [ "$D7_PCT" -ge 0 ] 2>/dev/null; then
+  R7=$(( 100 - D7_PCT )); EXTRA=""
+  [ "$D7_RESET" -gt 0 ] 2>/dev/null && EXTRA=" ${GRY}·${R} ${GRY}↺ $(epoch_fmt "$D7_RESET" '%a %H:%M')${R}"
+  printf '%b\n' "$(printf '%-3s' 7d) $(bar "$D7_PCT") ${B}$(printf '%3d' "$D7_PCT")%${R} ${GRY}·${R} ${B}${R7}%${R} ${GRY}left${R}${EXTRA}"
 fi
