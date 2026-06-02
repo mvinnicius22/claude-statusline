@@ -138,7 +138,7 @@ if [ "${SL_GIT:-1}" != 0 ] && git -C "$CUR_DIR" rev-parse --is-inside-work-tree 
   BRANCH=$(git -C "$CUR_DIR" branch --show-current 2>/dev/null)
   [ -z "$BRANCH" ] && BRANCH=$(git -C "$CUR_DIR" rev-parse --short HEAD 2>/dev/null)
   # compact per-type counts: A added · M modified · D deleted · R renamed · ? untracked
-  COUNTS=$(git -C "$CUR_DIR" status --porcelain 2>/dev/null | awk '
+  COUNTS=$(git -C "$CUR_DIR" status --porcelain -uall 2>/dev/null | awk '
     /^\?\?/{u++;next} /^R|^.R/{r++;next} /^D|^.D/{d++;next}
     /^A|^.A/{a++;next} /^M|^.M/{m++;next} {m++}
     END{printf "%d %d %d %d %d", a+0,m+0,d+0,r+0,u+0}')
