@@ -137,8 +137,18 @@ GIT=""
 if [ "${SL_GIT:-1}" != 0 ] && git -C "$CUR_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   BRANCH=$(git -C "$CUR_DIR" branch --show-current 2>/dev/null)
   [ -z "$BRANCH" ] && BRANCH=$(git -C "$CUR_DIR" rev-parse --short HEAD 2>/dev/null)
-  CHANGED=$(git -C "$CUR_DIR" status --porcelain 2>/dev/null | grep -c .)
-  CH=""; [ "$CHANGED" -gt 0 ] 2>/dev/null && CH=" ${YEL}(${CHANGED} changed)${R}"
+  # compact per-type counts: A added · M modified · D deleted · R renamed · ? untracked
+  COUNTS=$(git -C "$CUR_DIR" status --porcelain 2>/dev/null | awk '
+    /^\?\?/{u++;next} /^R|^.R/{r++;next} /^D|^.D/{d++;next}
+    /^A|^.A/{a++;next} /^M|^.M/{m++;next} {m++}
+    END{printf "%d %d %d %d %d", a+0,m+0,d+0,r+0,u+0}')
+  read -r CA CM CD CR CU <<< "$COUNTS"
+  CH=""
+  [ "${CA:-0}" -gt 0 ] && CH="${CH} ${GRN}A${CA}${R}"
+  [ "${CM:-0}" -gt 0 ] && CH="${CH} ${YEL}M${CM}${R}"
+  [ "${CD:-0}" -gt 0 ] && CH="${CH} ${RED}D${CD}${R}"
+  [ "${CR:-0}" -gt 0 ] && CH="${CH} ${BLU}R${CR}${R}"
+  [ "${CU:-0}" -gt 0 ] && CH="${CH} ${GRY}?${CU}${R}"
   AB=$(git -C "$CUR_DIR" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null)
   AH=$(echo "$AB"|awk '{print $2}'); BH=$(echo "$AB"|awk '{print $1}'); AR=""
   [ -n "$AH" ] && [ "$AH" -gt 0 ] 2>/dev/null && AR="${AR} ${GRN}↑$AH${R}"
